@@ -11,12 +11,8 @@ final class BaseSettingsViewModel {
         case failed(String)
     }
 
-    // Pola formularza — widok wiąże się z nimi bezpośrednio.
-    var street = ""
-    var buildingNumber = ""
-    var apartmentNumber = ""
-    var postalCode = ""
-    var city = ""
+    /// Formularz adresu — widok wiąże się z nim bezpośrednio.
+    var form = AddressForm()
 
     private(set) var savedBase: BaseLocation?
     private(set) var status: Status = .idle
@@ -29,23 +25,8 @@ final class BaseSettingsViewModel {
         self.geocoder = geocoder
     }
 
-    /// Adres z formularza po normalizacji.
-    var formAddress: Address {
-        Address(
-            street: street,
-            buildingNumber: buildingNumber,
-            apartmentNumber: apartmentNumber,
-            postalCode: postalCode,
-            city: city
-        ).normalized()
-    }
-
-    var validationErrors: [Address.ValidationError] {
-        formAddress.validationErrors
-    }
-
     var canSave: Bool {
-        validationErrors.isEmpty && status != .saving
+        form.validationErrors.isEmpty && status != .saving
     }
 
     /// Wczytuje zapisaną bazę i wypełnia nią formularz.
@@ -53,7 +34,7 @@ final class BaseSettingsViewModel {
         do {
             savedBase = try store.loadBase()
             if let savedBase {
-                fillForm(with: savedBase.address)
+                form = AddressForm(address: savedBase.address)
             }
         } catch {
             status = .failed("Nie udało się wczytać zapisanej bazy.")
@@ -62,7 +43,7 @@ final class BaseSettingsViewModel {
 
     /// Geokoduje adres z formularza i zapisuje go jako bazę.
     func save() async {
-        let address = formAddress
+        let address = form.address
         if let firstError = address.validationErrors.first {
             status = .failed(firstError.message)
             return
@@ -80,7 +61,7 @@ final class BaseSettingsViewModel {
                 let base = BaseLocation(address: address, coordinate: candidate.coordinate)
                 try store.saveBase(base)
                 savedBase = base
-                fillForm(with: address)
+                form = AddressForm(address: address)
                 status = .saved
             case .notFound:
                 status = .failed("Nie znaleziono tego adresu. Sprawdź pola i spróbuj ponownie.")
@@ -90,13 +71,5 @@ final class BaseSettingsViewModel {
         } catch {
             status = .failed(error.localizedDescription)
         }
-    }
-
-    private func fillForm(with address: Address) {
-        street = address.street
-        buildingNumber = address.buildingNumber
-        apartmentNumber = address.apartmentNumber ?? ""
-        postalCode = address.postalCode
-        city = address.city
     }
 }

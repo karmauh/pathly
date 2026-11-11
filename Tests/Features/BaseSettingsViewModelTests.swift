@@ -42,10 +42,10 @@ struct BaseSettingsViewModelTests {
     }
 
     private func fillValidForm(_ viewModel: BaseSettingsViewModel) {
-        viewModel.street = " ul. Magazynowa "
-        viewModel.buildingNumber = "5"
-        viewModel.postalCode = "02-652"
-        viewModel.city = "Warszawa"
+        viewModel.form.street = " ul. Magazynowa "
+        viewModel.form.buildingNumber = "5"
+        viewModel.form.postalCode = "02-652"
+        viewModel.form.city = "Warszawa"
     }
 
     @Test("Udane geokodowanie zapisuje znormalizowaną bazę")
@@ -101,7 +101,7 @@ struct BaseSettingsViewModelTests {
     @Test("Niepoprawny formularz nie wywołuje geokodera")
     func invalidFormSkipsGeocoding() async {
         let (viewModel, geocoder, _) = makeViewModel(result: .success(.notFound))
-        viewModel.city = "Warszawa"
+        viewModel.form.city = "Warszawa"
 
         #expect(!viewModel.canSave)
         await viewModel.save()
@@ -115,8 +115,8 @@ struct BaseSettingsViewModelTests {
         let (viewModel, geocoder, _) = makeViewModel(result: .success(.notFound), stored: .sample)
 
         viewModel.load()
-        #expect(viewModel.street == "ul. Magazynowa")
-        #expect(viewModel.postalCode == "02-652")
+        #expect(viewModel.form.street == "ul. Magazynowa")
+        #expect(viewModel.form.postalCode == "02-652")
 
         await viewModel.save()
         #expect(geocoder.requestedAddresses.isEmpty)

@@ -14,25 +14,7 @@ struct BaseSettingsView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Ulica (np. ul. Długa)", text: $viewModel.street)
-                    .textContentType(.streetAddressLine1)
-                    // Prefiks „ul.”, „al.” piszemy małą literą — bez automatycznej wielkiej litery.
-                    .textInputAutocapitalization(.never)
-                    .focused($isEditing)
-                HStack {
-                    TextField("Nr budynku", text: $viewModel.buildingNumber)
-                        .focused($isEditing)
-                    TextField("Nr lokalu", text: $viewModel.apartmentNumber)
-                        .focused($isEditing)
-                }
-                TextField("Kod pocztowy (00-000)", text: $viewModel.postalCode)
-                    .textContentType(.postalCode)
-                    .keyboardType(.numbersAndPunctuation)
-                    .focused($isEditing)
-                TextField("Miejscowość", text: $viewModel.city)
-                    .textContentType(.addressCity)
-                    .textInputAutocapitalization(.words)
-                    .focused($isEditing)
+                AddressFormFields(form: $viewModel.form, focus: $isEditing)
             } header: {
                 Text("Adres bazy")
             } footer: {
@@ -66,8 +48,6 @@ struct BaseSettingsView: View {
                 }
             }
         }
-        // Autokorekta „poprawia” nazwy własne ulic i miejscowości — wyłączamy ją.
-        .autocorrectionDisabled()
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Baza")
         .onAppear { viewModel.load() }
