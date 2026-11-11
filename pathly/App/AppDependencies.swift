@@ -11,6 +11,7 @@ struct AppDependencies {
     let parcelStore: any ParcelStore
     let geocoder: any Geocoder
     let textRecognizer: any TextRecognizer
+    let geocodingQueue: GeocodingQueue
 
     func makeBaseSettingsViewModel() -> BaseSettingsViewModel {
         BaseSettingsViewModel(store: baseStore, geocoder: geocoder)
@@ -21,20 +22,34 @@ struct AppDependencies {
     }
 
     func makeAddressReviewViewModel(mode: AddressReviewViewModel.Mode) -> AddressReviewViewModel {
-        AddressReviewViewModel(mode: mode, recognizer: textRecognizer, store: parcelStore)
+        AddressReviewViewModel(mode: mode, recognizer: textRecognizer, store: parcelStore, geocoding: geocodingQueue)
     }
 }
 
 extension AppDependencies {
     /// Zależności produkcyjne: dane na dysku, geokodowanie MapKit, OCR Vision.
     static func live() throws -> AppDependencies {
-        let container = try PersistenceController.makeContainer()
+        try make(
+            container: PersistenceController.makeContainer(),
+            geocoder: MapKitGeocoder(),
+            textRecognizer: VisionTextRecognizer()
+        )
+    }
+
+    private static func make(
+        container: ModelContainer,
+        geocoder: any Geocoder,
+        textRecognizer: any TextRecognizer
+    ) -> AppDependencies {
+        // Jeden magazyn dla view modeli i kolejki — wspólny kontekst SwiftData.
+        let parcelStore = SwiftDataParcelStore(context: container.mainContext)
         return AppDependencies(
             modelContainer: container,
             baseStore: SwiftDataBaseStore(context: container.mainContext),
-            parcelStore: SwiftDataParcelStore(context: container.mainContext),
-            geocoder: MapKitGeocoder(),
-            textRecognizer: VisionTextRecognizer()
+            parcelStore: parcelStore,
+            geocoder: geocoder,
+            textRecognizer: textRecognizer,
+            geocodingQueue: GeocodingQueue(geocoder: geocoder, store: parcelStore)
         )
     }
 
@@ -43,13 +58,7 @@ extension AppDependencies {
     static func preview() -> AppDependencies {
         // Kontener w pamięci nie ma powodu się nie udać — błąd tutaj to błąd programisty.
         let container = try! PersistenceController.makeContainer(inMemory: true)
-        return AppDependencies(
-            modelContainer: container,
-            baseStore: SwiftDataBaseStore(context: container.mainContext),
-            parcelStore: SwiftDataParcelStore(context: container.mainContext),
-            geocoder: PreviewGeocoder(),
-            textRecognizer: PreviewTextRecognizer()
-        )
+        return make(container: container, geocoder: PreviewGeocoder(), textRecognizer: PreviewTextRecognizer())
     }
     #endif
 }

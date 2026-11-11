@@ -17,6 +17,8 @@ struct PathlyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(dependencies: dependencies)
+                // Przesyłki, których geokodowanie przerwało zamknięcie aplikacji.
+                .task { dependencies.geocodingQueue.resumePending() }
         }
         .modelContainer(dependencies.modelContainer)
     }

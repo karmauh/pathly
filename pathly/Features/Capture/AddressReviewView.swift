@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 /// Ekran podglądu adresu: zdjęcie etykiety (tylko w pamięci) i formularz do
@@ -93,11 +94,15 @@ struct AddressReviewView: View {
 
     @ViewBuilder
     private var reviewSections: some View {
-        if let notice = viewModel.notice {
+        if let notice = viewModel.notice ?? viewModel.geocodingProblem {
             Section {
                 Label(notice, systemImage: "exclamationmark.bubble")
                     .foregroundStyle(.orange)
             }
+        }
+
+        if viewModel.canChooseLocation {
+            locationCandidatesSection
         }
 
         Section {
@@ -126,6 +131,43 @@ struct AddressReviewView: View {
                 }
                 .disabled(!viewModel.canApprove)
             }
+        }
+    }
+
+    /// Wybór miejsca, gdy adres pasuje do kilku odległych punktów.
+    private var locationCandidatesSection: some View {
+        let numbered = Array(viewModel.locationCandidates.enumerated())
+        return Section {
+            Map(initialPosition: .automatic) {
+                ForEach(numbered, id: \.offset) { index, candidate in
+                    Marker("\(index + 1)", coordinate: candidate.coordinate.clLocationCoordinate)
+                }
+            }
+            .frame(height: 200)
+            .listRowInsets(EdgeInsets())
+            .accessibilityHidden(true)
+
+            ForEach(numbered, id: \.offset) { index, candidate in
+                Button {
+                    if viewModel.chooseLocation(candidate) { finish(next: false) }
+                } label: {
+                    Label {
+                        Text(candidate.label)
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Text("\(index + 1)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .frame(width: 24, height: 24)
+                            .background(.red, in: .circle)
+                    }
+                }
+                .accessibilityLabel("Miejsce \(index + 1): \(candidate.label)")
+            }
+        } header: {
+            Text("Wybierz właściwe miejsce")
+        } footer: {
+            Text("Do adresu pasuje kilka miejsc. Wybierz właściwe albo popraw adres poniżej.")
         }
     }
 

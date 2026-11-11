@@ -6,12 +6,14 @@ import Testing
 @Suite("AddressReviewViewModel")
 struct AddressReviewViewModelTests {
     let store = InMemoryParcelStore()
+    let scheduler = RecordingGeocodingScheduler()
+    let polna = Address(street: "Polna", buildingNumber: "2", postalCode: "90-001", city: "Łódź")
 
     private func makeViewModel(
         mode: AddressReviewViewModel.Mode = .photo,
         lines: [RecognizedLine] = []
     ) -> AddressReviewViewModel {
-        AddressReviewViewModel(mode: mode, recognizer: MockTextRecognizer(result: .success(lines)), store: store)
+        AddressReviewViewModel(mode: mode, recognizer: MockTextRecognizer(result: .success(lines)), store: store, geocoding: scheduler)
     }
 
     @Test("Rozpoznany adres odbiorcy wypełnia formularz")
@@ -64,7 +66,8 @@ struct AddressReviewViewModelTests {
         let viewModel = AddressReviewViewModel(
             mode: .photo,
             recognizer: MockTextRecognizer(result: .failure(.recognitionFailed)),
-            store: store
+            store: store,
+            geocoding: scheduler
         )
         await viewModel.recognize(makeBlankImage())
         #expect(viewModel.phase == .reviewing)
@@ -78,6 +81,7 @@ struct AddressReviewViewModelTests {
 
         #expect(viewModel.approve())
         #expect(Array(store.parcels.values) == [viewModel.form.address])
+        #expect(scheduler.enqueued == Array(store.parcels.keys), "Zatwierdzona przesyłka trafia do kolejki geokodowania")
     }
 
     @Test("Niepoprawny adres nie zapisuje się i wyróżnia błędne pola")
@@ -87,6 +91,7 @@ struct AddressReviewViewModelTests {
 
         #expect(!viewModel.approve())
         #expect(store.parcels.isEmpty)
+        #expect(scheduler.enqueued.isEmpty)
         #expect(viewModel.errorMessage != nil)
         #expect(viewModel.fieldsToCheck == [.buildingNumber, .postalCode])
     }
@@ -98,11 +103,12 @@ struct AddressReviewViewModelTests {
         viewModel.form = AddressForm(address: Address(street: "Polna", buildingNumber: "2", postalCode: "90-001", city: "Łódź"))
         #expect(!viewModel.approve())
         #expect(viewModel.errorMessage != nil)
+        #expect(scheduler.enqueued.isEmpty)
     }
 
     @Test("Edycja wczytuje i aktualizuje adres przesyłki")
     func editExisting() throws {
-        let original = Address(street: "Polna", buildingNumber: "2", postalCode: "90-001", city: "Łódź")
+        let original = polna
         let id = try store.addParcel(address: original)
         let viewModel = makeViewModel(mode: .edit(id))
 
@@ -114,5 +120,49 @@ struct AddressReviewViewModelTests {
         #expect(viewModel.approve())
         #expect(store.parcels[id]?.buildingNumber == "4")
         #expect(store.parcels.count == 1)
+        #expect(scheduler.enqueued == [id])
+    }
+
+    @Test("Niejednoznaczny adres — kurier wybiera miejsce")
+    func chooseAmbiguousLocation() throws {
+        let id = try store.addParcel(address: polna)
+        let candidates = [
+            GeocodingCandidate(coordinate: Coordinate(latitude: 51.76, longitude: 19.45), label: "Polna 2, Łódź"),
+            GeocodingCandidate(coordinate: Coordinate(latitude: 51.70, longitude: 19.30), label: "Polna 2, Łódź-Ruda"),
+        ]
+        store.statuses[id] = .ambiguous
+        store.candidates[id] = candidates
+        let viewModel = makeViewModel(mode: .edit(id))
+
+        viewModel.load()
+        #expect(viewModel.canChooseLocation)
+        #expect(viewModel.chooseLocation(candidates[1]))
+        #expect(store.chosenLocations[id] == candidates[1])
+    }
+
+    @Test("Po zmianie adresu kandydaci miejsc znikają")
+    func editedAddressHidesLocationCandidates() throws {
+        let id = try store.addParcel(address: polna)
+        store.statuses[id] = .ambiguous
+        store.candidates[id] = [GeocodingCandidate(coordinate: Coordinate(latitude: 51.76, longitude: 19.45), label: "Polna 2")]
+        let viewModel = makeViewModel(mode: .edit(id))
+
+        viewModel.load()
+        viewModel.form.buildingNumber = "3"
+        #expect(!viewModel.canChooseLocation)
+    }
+
+    @Test("Edycja nieznalezionego adresu wyjaśnia problem")
+    func notFoundNotice() throws {
+        let id = try store.addParcel(address: polna)
+        store.statuses[id] = .notFound
+        let viewModel = makeViewModel(mode: .edit(id))
+
+        viewModel.load()
+        #expect(viewModel.geocodingProblem != nil)
+        #expect(!viewModel.canChooseLocation)
+
+        viewModel.form.city = "Zgierz"
+        #expect(viewModel.geocodingProblem == nil, "Po zmianie adresu stary problem nie dotyczy")
     }
 }
