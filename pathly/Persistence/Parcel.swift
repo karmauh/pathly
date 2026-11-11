@@ -3,8 +3,8 @@ import SwiftData
 
 /// Przesyłka do doręczenia (model SwiftData).
 ///
-/// Schemat przygotowany w etapie 1; wypełniany od etapu 3 (dodawanie ze zdjęcia)
-/// i 4 (geokodowanie).
+/// Zdjęcie etykiety nie jest przechowywane: kurier weryfikuje adres od razu po
+/// zrobieniu zdjęcia, a paczka i tak jest fizycznie w aucie.
 @Model
 final class Parcel {
     @Attribute(.unique) var id: UUID
@@ -17,14 +17,11 @@ final class Parcel {
     var geocodedAddress: Address?
     var geocodingStatus: GeocodingStatus
     var deliveryStatus: DeliveryStatus
-    /// Opcjonalne zdjęcie etykiety (JPEG), trzymane poza główną bazą.
-    @Attribute(.externalStorage) var labelPhoto: Data?
 
     init(
         id: UUID = UUID(),
         createdAt: Date = .now,
-        address: Address,
-        labelPhoto: Data? = nil
+        address: Address
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -33,6 +30,5 @@ final class Parcel {
         self.geocodedAddress = nil
         self.geocodingStatus = .pending
         self.deliveryStatus = .pending
-        self.labelPhoto = labelPhoto
     }
 }
