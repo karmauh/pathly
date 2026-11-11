@@ -14,3 +14,6 @@ build/
 
 # macOS
 .DS_Store
+
+# Obrazy generowane przez Tools/make-sample-labels.swift
+SampleLabels/
