@@ -12,6 +12,8 @@ struct AppDependencies {
     let geocoder: any Geocoder
     let textRecognizer: any TextRecognizer
     let geocodingQueue: GeocodingQueue
+    /// Macierz czasów przejazdu dla algorytmu trasy (etapy 6–7).
+    let travelCostProvider: any TravelCostProvider
 
     func makeBaseSettingsViewModel() -> BaseSettingsViewModel {
         BaseSettingsViewModel(store: baseStore, geocoder: geocoder)
@@ -27,19 +29,22 @@ struct AppDependencies {
 }
 
 extension AppDependencies {
-    /// Zależności produkcyjne: dane na dysku, geokodowanie MapKit, OCR Vision.
+    /// Zależności produkcyjne: dane na dysku, geokodowanie MapKit, OCR Vision,
+    /// czasy przejazdu z OpenRouteService (albo przybliżenie bez klucza).
     static func live() throws -> AppDependencies {
         try make(
             container: PersistenceController.makeContainer(),
             geocoder: MapKitGeocoder(),
-            textRecognizer: VisionTextRecognizer()
+            textRecognizer: VisionTextRecognizer(),
+            travelCostProvider: FallbackCostProvider.live(configuration: .main)
         )
     }
 
     private static func make(
         container: ModelContainer,
         geocoder: any Geocoder,
-        textRecognizer: any TextRecognizer
+        textRecognizer: any TextRecognizer,
+        travelCostProvider: any TravelCostProvider
     ) -> AppDependencies {
         // Jeden magazyn dla view modeli i kolejki — wspólny kontekst SwiftData.
         let parcelStore = SwiftDataParcelStore(context: container.mainContext)
@@ -49,16 +54,23 @@ extension AppDependencies {
             parcelStore: parcelStore,
             geocoder: geocoder,
             textRecognizer: textRecognizer,
-            geocodingQueue: GeocodingQueue(geocoder: geocoder, store: parcelStore)
+            geocodingQueue: GeocodingQueue(geocoder: geocoder, store: parcelStore),
+            travelCostProvider: travelCostProvider
         )
     }
 
     #if DEBUG
-    /// Zależności do podglądów: dane w pamięci, bez sieci i bez OCR.
+    /// Zależności do podglądów: dane w pamięci, bez sieci i bez OCR
+    /// (czasy przejazdu z przybliżenia).
     static func preview() -> AppDependencies {
         // Kontener w pamięci nie ma powodu się nie udać — błąd tutaj to błąd programisty.
         let container = try! PersistenceController.makeContainer(inMemory: true)
-        return make(container: container, geocoder: PreviewGeocoder(), textRecognizer: PreviewTextRecognizer())
+        return make(
+            container: container,
+            geocoder: PreviewGeocoder(),
+            textRecognizer: PreviewTextRecognizer(),
+            travelCostProvider: HaversineCostProvider()
+        )
     }
     #endif
 }
