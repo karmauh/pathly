@@ -1,0 +1,16 @@
+# Sekrety (klucz API OpenRouteService)
+Config/Secrets.xcconfig
+
+# Xcode — dane użytkownika i artefakty budowania
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcresult
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# macOS
+.DS_Store
