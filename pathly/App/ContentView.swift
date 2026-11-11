@@ -1,49 +1,33 @@
 import SwiftData
 import SwiftUI
 
-/// Ekran główny. Na razie pokazuje stan bazy; w etapie 3 zastąpi go lista przesyłek.
+/// Cele nawigacji aplikacji.
+enum AppDestination: Hashable {
+    case baseSettings
+}
+
+/// Korzeń interfejsu: stos nawigacji z listą przesyłek jako ekranem głównym.
 struct ContentView: View {
     let dependencies: AppDependencies
 
-    @Query(sort: \Base.updatedAt, order: .reverse) private var bases: [Base]
-
     var body: some View {
         NavigationStack {
-            Group {
-                if let base = bases.first {
-                    ContentUnavailableView(
-                        "Baza zapisana",
-                        systemImage: "house.fill",
-                        description: Text(base.address.singleLine)
-                    )
-                } else {
-                    ContentUnavailableView {
-                        Label("Brak zapisanej bazy", systemImage: "house")
-                    } description: {
-                        Text("Zapisz adres bazy — będzie punktem startu i końca każdej trasy.")
-                    } actions: {
-                        NavigationLink("Ustaw bazę", value: Destination.baseSettings)
-                            .buttonStyle(.borderedProminent)
+            ParcelListView(dependencies: dependencies)
+                .navigationTitle("Przesyłki")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink(value: AppDestination.baseSettings) {
+                            Label("Ustawienia bazy", systemImage: "gearshape")
+                        }
                     }
                 }
-            }
-            .navigationTitle("Pathly")
-            .toolbar {
-                NavigationLink(value: Destination.baseSettings) {
-                    Label("Ustawienia bazy", systemImage: "gearshape")
+                .navigationDestination(for: AppDestination.self) { destination in
+                    switch destination {
+                    case .baseSettings:
+                        BaseSettingsView(viewModel: dependencies.makeBaseSettingsViewModel())
+                    }
                 }
-            }
-            .navigationDestination(for: Destination.self) { destination in
-                switch destination {
-                case .baseSettings:
-                    BaseSettingsView(viewModel: dependencies.makeBaseSettingsViewModel())
-                }
-            }
         }
-    }
-
-    private enum Destination: Hashable {
-        case baseSettings
     }
 }
 
