@@ -12,9 +12,20 @@ struct LabelTextNormalizerTests {
         ("AL.Niepodległości 12A", "al. Niepodległości 12A"),
         ("Mieszana Wielkość Liter", "Mieszana Wielkość Liter"),
         ("12A/4B", "12A/4B"),
+        ("al. Jana Pawła Il 45", "al. Jana Pawła II 45"),
+        ("UL. JANA PAWŁA || 12", "ul. Jana Pawła II 12"),
+        ("ul. Bolesława lII 3", "ul. Bolesława III 3"),
+        ("Il piętro", "Il piętro"),
     ])
     func normalizes(input: String, expected: String) {
         #expect(LabelTextNormalizer.normalize(input) == expected)
+    }
+
+    @Test("Wielka pierwsza litera miejscowości")
+    func capitalizesFirstLetter() {
+        #expect(LabelTextNormalizer.capitalizingFirstLetter("łódź") == "Łódź")
+        #expect(LabelTextNormalizer.capitalizingFirstLetter("Kraków") == "Kraków")
+        #expect(LabelTextNormalizer.capitalizingFirstLetter("") == "")
     }
 
     @Test("Złożenie znaków do porównań")

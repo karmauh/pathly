@@ -16,7 +16,23 @@ nonisolated enum LabelTextNormalizer {
     ]
 
     static func normalize(_ text: String) -> String {
-        fixCase(spaceAfterStreetPrefix(collapseWhitespace(text)))
+        fixCase(fixRomanNumerals(spaceAfterStreetPrefix(collapseWhitespace(text))))
+    }
+
+    /// OCR myli „I” z „l” i „|”: „Jana Pawła Il”, „Jana Pawła ||” → „Jana Pawła II”.
+    /// Dotyczy tylko osobnych słów złożonych wyłącznie z tych znaków, po innym słowie.
+    static func fixRomanNumerals(_ text: String) -> String {
+        var words = text.split(separator: " ").map(String.init)
+        for index in words.indices.dropFirst() where words[index].wholeMatch(of: /[Il|]{2,3}/) != nil {
+            words[index] = String(repeating: "I", count: words[index].count)
+        }
+        return words.joined(separator: " ")
+    }
+
+    /// Pierwsza litera wielka — OCR potrafi zgubić wielkość litery („łódź” → „Łódź”).
+    static func capitalizingFirstLetter(_ text: String) -> String {
+        guard let first = text.first, first.isLowercase else { return text }
+        return first.uppercased() + text.dropFirst()
     }
 
     /// Przycina i scala wielokrotne białe znaki w jedną spację.

@@ -134,7 +134,7 @@ nonisolated private extension AddressParser {
             buildingNumber: street?.buildingNumber ?? "",
             apartmentNumber: street?.apartmentNumber,
             postalCode: match.postalCode,
-            city: match.city
+            city: LabelTextNormalizer.capitalizingFirstLetter(match.city)
         ).normalized()
 
         let box = lines.dropFirst().reduce(lines[0].box) { $0.union($1.box) }
