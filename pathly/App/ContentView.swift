@@ -1,17 +1,54 @@
+import SwiftData
 import SwiftUI
 
-/// Tymczasowy ekran startowy (etap 0). Zostanie zastąpiony nawigacją
-/// między funkcjami aplikacji w kolejnych etapach.
+/// Ekran główny. Na razie pokazuje stan bazy; w etapie 3 zastąpi go lista przesyłek.
 struct ContentView: View {
+    let dependencies: AppDependencies
+
+    @Query(sort: \Base.updatedAt, order: .reverse) private var bases: [Base]
+
     var body: some View {
-        ContentUnavailableView(
-            "Pathly",
-            systemImage: "shippingbox",
-            description: Text("Aplikacja dla kurierów — wkrótce tutaj pojawi się lista przesyłek.")
-        )
+        NavigationStack {
+            Group {
+                if let base = bases.first {
+                    ContentUnavailableView(
+                        "Baza zapisana",
+                        systemImage: "house.fill",
+                        description: Text(base.address.singleLine)
+                    )
+                } else {
+                    ContentUnavailableView {
+                        Label("Brak zapisanej bazy", systemImage: "house")
+                    } description: {
+                        Text("Zapisz adres bazy — będzie punktem startu i końca każdej trasy.")
+                    } actions: {
+                        NavigationLink("Ustaw bazę", value: Destination.baseSettings)
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            .navigationTitle("Pathly")
+            .toolbar {
+                NavigationLink(value: Destination.baseSettings) {
+                    Label("Ustawienia bazy", systemImage: "gearshape")
+                }
+            }
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .baseSettings:
+                    BaseSettingsView(viewModel: dependencies.makeBaseSettingsViewModel())
+                }
+            }
+        }
+    }
+
+    private enum Destination: Hashable {
+        case baseSettings
     }
 }
 
 #Preview {
-    ContentView()
+    let dependencies = AppDependencies.preview()
+    ContentView(dependencies: dependencies)
+        .modelContainer(dependencies.modelContainer)
 }
