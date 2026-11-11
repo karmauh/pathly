@@ -23,6 +23,13 @@ struct ParcelListView: View {
     /// Źródło, z którego otworzyć kolejne zdjęcie po „Zatwierdź i następna”.
     @State private var nextSource: CaptureSource?
 
+    private var geocoding: GeocodingQueue { dependencies.geocodingQueue }
+
+    /// Przesyłki, których położenia nie udało się ustalić — blokują wyliczenie trasy.
+    private var parcelsNeedingAttention: [Parcel] {
+        parcels.filter { $0.geocodingStatus.needsAttention && !geocoding.isScheduled($0.id) }
+    }
+
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
         _viewModel = State(initialValue: dependencies.makeParcelListViewModel())
@@ -37,6 +44,10 @@ struct ParcelListView: View {
                             .foregroundStyle(.orange)
                     }
                 }
+            }
+
+            if !parcelsNeedingAttention.isEmpty {
+                attentionSection
             }
 
             if parcels.isEmpty {
@@ -57,7 +68,7 @@ struct ParcelListView: View {
                         Button {
                             review = ReviewRequest(mode: .edit(parcel.id))
                         } label: {
-                            ParcelRow(parcel: parcel)
+                            ParcelRow(parcel: parcel, isScheduled: geocoding.isScheduled(parcel.id))
                         }
                         .foregroundStyle(.primary)
                     }
@@ -70,6 +81,12 @@ struct ParcelListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) { addMenu }
         }
+        .safeAreaInset(edge: .bottom) {
+            if geocoding.isRunning {
+                GeocodingProgressBar(queue: geocoding)
+            }
+        }
+        .animation(.default, value: geocoding.isRunning)
         .alert(
             "Błąd",
             isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.dismissError() } }),
@@ -101,6 +118,25 @@ struct ParcelListView: View {
             }
             // Przypadkowe przesunięcie arkusza nie może zgubić odczytanego adresu.
             .interactiveDismissDisabled()
+        }
+    }
+
+    private var attentionSection: some View {
+        let count = parcelsNeedingAttention.count
+        let hasTechnicalFailures = parcelsNeedingAttention.contains { $0.geocodingStatus == .failed }
+        return Section {
+            Label(
+                count == 1 ? "1 przesyłka wymaga poprawy" : "Przesyłki wymagające poprawy: \(count)",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(.orange)
+            if hasTechnicalFailures {
+                Button("Ponów ustalanie położenia", systemImage: "arrow.clockwise") {
+                    geocoding.retryFailed()
+                }
+            }
+        } footer: {
+            Text("Dotknij przesyłkę, aby poprawić adres. Bez położenia wszystkich przesyłek nie wyliczysz trasy.")
         }
     }
 
@@ -154,9 +190,36 @@ private struct ReviewRequest: Identifiable {
     var source: CaptureSource?
 }
 
+/// Pasek postępu geokodowania nad dolną krawędzią listy.
+private struct GeocodingProgressBar: View {
+    let queue: GeocodingQueue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Ustalanie położenia: \(min(queue.completed + 1, queue.total)) z \(queue.total)")
+                .font(.subheadline)
+            ProgressView(value: Double(queue.completed), total: Double(max(queue.total, 1)))
+            if queue.isWaitingForRateLimit {
+                Text("Przekroczono limit zapytań — czekam i spróbuję ponownie.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(.bar)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Wiersz listy: adres i stan geokodowania.
 private struct ParcelRow: View {
     let parcel: Parcel
+    /// Przesyłka czeka w kolejce geokodowania (także przy ponowieniu po błędzie).
+    let isScheduled: Bool
+
+    private var status: GeocodingStatus {
+        isScheduled ? .pending : parcel.geocodingStatus
+    }
 
     var body: some View {
         HStack {
@@ -165,6 +228,11 @@ private struct ParcelRow: View {
                 Text("\(parcel.address.postalCode) \(parcel.address.city)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if let problem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
             Spacer()
             statusIcon
@@ -172,9 +240,18 @@ private struct ParcelRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var problem: String? {
+        switch status {
+        case .notFound: "Nie znaleziono adresu — popraw go"
+        case .ambiguous: "Kilka pasujących miejsc — wybierz właściwe"
+        case .failed: "Błąd połączenia — ponów lub popraw adres"
+        case .pending, .succeeded: nil
+        }
+    }
+
     @ViewBuilder
     private var statusIcon: some View {
-        switch parcel.geocodingStatus {
+        switch status {
         case .pending:
             Image(systemName: "clock")
                 .foregroundStyle(.secondary)
