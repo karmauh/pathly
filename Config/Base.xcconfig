@@ -1,0 +1,9 @@
+// Base.xcconfig
+// Wspólna konfiguracja dla Debug i Release.
+// Prawdziwe sekrety trzymamy w Secrets.xcconfig (ignorowany przez Git).
+// `#include?` nie przerywa budowania, gdy pliku brak — aplikacja działa
+// wtedy bez klucza (tryb przybliżony haversine).
+
+ORS_API_KEY =
+
+#include? "Secrets.xcconfig"
