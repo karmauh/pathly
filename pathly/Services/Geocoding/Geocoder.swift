@@ -1,7 +1,7 @@
 import Foundation
 
 /// Pojedynczy kandydat zwrócony przez geokoder.
-nonisolated struct GeocodingCandidate: Hashable, Sendable {
+nonisolated struct GeocodingCandidate: Hashable, Codable, Sendable {
     var coordinate: Coordinate
     /// Adres w postaci zwróconej przez geokoder, do pokazania kurierowi.
     var label: String
@@ -24,6 +24,23 @@ nonisolated enum GeocodingResult: Hashable, Sendable {
     case notFound
     /// Kilka odległych od siebie miejsc pasuje do adresu.
     case ambiguous([GeocodingCandidate])
+}
+
+/// Ostateczny wynik geokodowania przesyłki zapisywany w bazie — po ponowieniach,
+/// więc obejmuje też błąd techniczny, którego nie udało się przeczekać.
+nonisolated enum GeocodingOutcome: Hashable, Sendable {
+    case located(Coordinate)
+    case notFound
+    case ambiguous([GeocodingCandidate])
+    case failed
+
+    init(_ result: GeocodingResult) {
+        switch result {
+        case .found(let candidate): self = .located(candidate.coordinate)
+        case .notFound: self = .notFound
+        case .ambiguous(let candidates): self = .ambiguous(candidates)
+        }
+    }
 }
 
 /// Błędy techniczne geokodowania (brak wyniku to nie błąd, tylko `.notFound`).

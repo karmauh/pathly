@@ -10,12 +10,17 @@ final class Parcel {
     @Attribute(.unique) var id: UUID
     var createdAt: Date
     var address: Address
-    /// Współrzędne; `nil`, dopóki geokodowanie się nie powiedzie.
+    /// Współrzędne adresu `geocodedAddress`. Obowiązują tylko przy statusie
+    /// `.succeeded` — po zmianie adresu zostają, żeby powrót do poprzedniego
+    /// adresu nie wymagał ponownego zapytania.
     var coordinate: Coordinate?
     /// Adres, dla którego wyznaczono `coordinate`. Pozwala nie geokodować
     /// ponownie niezmienionego adresu.
     var geocodedAddress: Address?
     var geocodingStatus: GeocodingStatus
+    /// Pasujące miejsca, gdy adres jest niejednoznaczny — kurier wybiera jedno
+    /// z nich bez ponownego zapytania.
+    var geocodingCandidates: [GeocodingCandidate] = []
     var deliveryStatus: DeliveryStatus
 
     init(
@@ -29,6 +34,7 @@ final class Parcel {
         self.coordinate = nil
         self.geocodedAddress = nil
         self.geocodingStatus = .pending
+        self.geocodingCandidates = []
         self.deliveryStatus = .pending
     }
 }

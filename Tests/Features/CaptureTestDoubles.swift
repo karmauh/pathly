@@ -16,6 +16,9 @@ struct MockTextRecognizer: TextRecognizer {
 @MainActor
 final class InMemoryParcelStore: ParcelStore {
     private(set) var parcels: [UUID: Address] = [:]
+    var statuses: [UUID: GeocodingStatus] = [:]
+    var candidates: [UUID: [GeocodingCandidate]] = [:]
+    private(set) var chosenLocations: [UUID: GeocodingCandidate] = [:]
     var shouldFail = false
 
     func addParcel(address: Address) throws -> UUID {
@@ -36,6 +39,22 @@ final class InMemoryParcelStore: ParcelStore {
         if shouldFail { throw ParcelStoreError.parcelNotFound }
         ids.forEach { parcels[$0] = nil }
     }
+
+    func geocodingStatus(ofParcel id: UUID) throws -> GeocodingStatus? { statuses[id] }
+
+    func geocodingCandidates(ofParcel id: UUID) throws -> [GeocodingCandidate] { candidates[id] ?? [] }
+
+    func chooseLocation(_ candidate: GeocodingCandidate, forParcel id: UUID) throws {
+        if shouldFail { throw ParcelStoreError.parcelNotFound }
+        chosenLocations[id] = candidate
+    }
+}
+
+/// Atrapa kolejki geokodowania: zapamiętuje zlecone przesyłki.
+@MainActor
+final class RecordingGeocodingScheduler: GeocodingScheduling {
+    private(set) var enqueued: [UUID] = []
+    func enqueue(_ parcelID: UUID) { enqueued.append(parcelID) }
 }
 
 /// Najmniejszy obraz — atrapa OCR i tak go nie czyta.
