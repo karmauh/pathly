@@ -12,8 +12,10 @@ struct AppDependencies {
     let geocoder: any Geocoder
     let textRecognizer: any TextRecognizer
     let geocodingQueue: GeocodingQueue
-    /// Macierz czasów przejazdu dla algorytmu trasy (etapy 6–7).
+    /// Macierz czasów przejazdu dla algorytmu trasy.
     let travelCostProvider: any TravelCostProvider
+    let deliveryStore: any DeliveryStore
+    let routeStore: any RouteStore
 
     func makeBaseSettingsViewModel() -> BaseSettingsViewModel {
         BaseSettingsViewModel(store: baseStore, geocoder: geocoder)
@@ -25,6 +27,15 @@ struct AppDependencies {
 
     func makeAddressReviewViewModel(mode: AddressReviewViewModel.Mode) -> AddressReviewViewModel {
         AddressReviewViewModel(mode: mode, recognizer: textRecognizer, store: parcelStore, geocoding: geocodingQueue)
+    }
+
+    func makeRouteViewModel() -> RouteViewModel {
+        RouteViewModel(
+            planner: RoutePlanner(costProvider: travelCostProvider),
+            baseStore: baseStore,
+            deliveries: deliveryStore,
+            routes: routeStore
+        )
     }
 }
 
@@ -55,7 +66,9 @@ extension AppDependencies {
             geocoder: geocoder,
             textRecognizer: textRecognizer,
             geocodingQueue: GeocodingQueue(geocoder: geocoder, store: parcelStore),
-            travelCostProvider: travelCostProvider
+            travelCostProvider: travelCostProvider,
+            deliveryStore: parcelStore,
+            routeStore: SwiftDataRouteStore(context: container.mainContext)
         )
     }
 

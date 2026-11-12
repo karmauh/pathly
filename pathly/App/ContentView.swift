@@ -6,21 +6,35 @@ enum AppDestination: Hashable {
     case baseSettings
 }
 
-/// Korzeń interfejsu: stos nawigacji z listą przesyłek jako ekranem głównym.
+/// Korzeń interfejsu: karty Przesyłki, Trasa i Ustawienia, każda z własnym stosem nawigacji.
 struct ContentView: View {
     let dependencies: AppDependencies
 
     var body: some View {
-        NavigationStack {
-            ParcelListView(dependencies: dependencies)
-                .navigationTitle("Przesyłki")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        NavigationLink(value: AppDestination.baseSettings) {
-                            Label("Ustawienia bazy", systemImage: "gearshape")
-                        }
-                    }
+        TabView {
+            Tab("Przesyłki", systemImage: "shippingbox") {
+                stack {
+                    ParcelListView(dependencies: dependencies)
+                        .navigationTitle("Przesyłki")
                 }
+            }
+            Tab("Trasa", systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
+                stack {
+                    RouteView(dependencies: dependencies)
+                        .navigationTitle("Trasa")
+                }
+            }
+            Tab("Ustawienia", systemImage: "gearshape") {
+                stack {
+                    SettingsView()
+                }
+            }
+        }
+    }
+
+    private func stack(@ViewBuilder _ content: () -> some View) -> some View {
+        NavigationStack {
+            content()
                 .navigationDestination(for: AppDestination.self) { destination in
                     switch destination {
                     case .baseSettings:
