@@ -162,6 +162,7 @@ struct ParcelListView: View {
         guard let item = photoSelection else { return }
         photoSelection = nil
         guard let data = try? await item.loadTransferable(type: Data.self), let photo = UIImage(data: data) else {
+            viewModel.reportPhotoLoadFailure()
             return
         }
         review = ReviewRequest(mode: .photo, photo: photo, source: .library)

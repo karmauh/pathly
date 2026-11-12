@@ -21,6 +21,11 @@ final class ParcelListViewModel {
         }
     }
 
+    /// Zdjęcia z galerii nie udało się wczytać (np. format nieobsługiwany albo brak dostępu).
+    func reportPhotoLoadFailure() {
+        errorMessage = "Nie udało się wczytać zdjęcia z galerii. Spróbuj inne zdjęcie albo wpisz adres ręcznie."
+    }
+
     func dismissError() {
         errorMessage = nil
     }
