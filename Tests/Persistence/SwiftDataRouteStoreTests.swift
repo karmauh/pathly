@@ -92,6 +92,20 @@ struct SwiftDataRouteStoreTests {
         #expect(try savedRoutes().first?.isUpToDate == false)
     }
 
+    @Test("Położenie wskazane na mapie zapisuje się jako ustalone i unieważnia trasę")
+    func manualLocation() throws {
+        let id = try locatedParcelWithRoute()
+        let pin = Coordinate(latitude: 50.1, longitude: 19.9)
+        try parcels.setManualLocation(pin, forParcel: id)
+
+        let parcel = try #require(try container.mainContext.fetch(FetchDescriptor<Parcel>()).first)
+        #expect(parcel.coordinate == pin)
+        #expect(parcel.geocodingStatus == .succeeded)
+        #expect(parcel.geocodedAddress == parcel.address)
+        #expect(try savedRoutes().first?.isUpToDate == false)
+        #expect(try parcels.knownCoordinate(for: address) == pin, "Inna paczka pod ten adres przejmie pinezkę")
+    }
+
     @Test("Status doręczenia nie unieważnia trasy")
     func deliveryKeepsRoute() throws {
         let id = try locatedParcelWithRoute()
@@ -124,5 +138,22 @@ struct SwiftDataRouteStoreTests {
         #expect(candidates.stops == [RouteStop(parcelID: ready, coordinate: krakow)])
         #expect(candidates.needingAttention == 2)
         #expect(candidates.awaitingGeocoding == 1)
+    }
+
+    @Test("Koniec dnia: doręczone i trasa znikają, niedoręczone wracają do doręczenia")
+    func finishDay() throws {
+        let delivered = try locatedParcelWithRoute()
+        try parcels.setDeliveryStatus(.delivered, ofParcel: delivered)
+        let notDelivered = try parcels.addParcel(address: address)
+        try parcels.setDeliveryStatus(.notDelivered, ofParcel: notDelivered)
+        let untouched = try parcels.addParcel(address: address)
+
+        let summary = try parcels.finishDay()
+
+        #expect(summary == DaySummary(removed: 1, carriedOver: 1))
+        #expect(try savedRoutes().isEmpty)
+        let remaining = try container.mainContext.fetch(FetchDescriptor<Parcel>())
+        #expect(Set(remaining.map(\.id)) == [notDelivered, untouched])
+        #expect(remaining.allSatisfy { $0.deliveryStatus == .pending })
     }
 }

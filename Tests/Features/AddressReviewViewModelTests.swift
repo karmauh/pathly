@@ -165,4 +165,46 @@ struct AddressReviewViewModelTests {
         viewModel.form.city = "Zgierz"
         #expect(viewModel.geocodingProblem == nil, "Po zmianie adresu stary problem nie dotyczy")
     }
+
+    @Test("Zatwierdzenie nieznalezionego adresu bez zmian ponawia geokodowanie")
+    func reapproveRetriesGeocoding() throws {
+        let id = try store.addParcel(address: polna)
+        store.statuses[id] = .notFound
+        let viewModel = makeViewModel(mode: .edit(id))
+        viewModel.load()
+
+        #expect(viewModel.approve())
+        #expect(scheduler.enqueued == [id])
+    }
+
+    @Test("Nieznaleziony adres — kurier wskazuje miejsce na mapie")
+    func manualLocation() throws {
+        let id = try store.addParcel(address: polna)
+        store.statuses[id] = .notFound
+        let viewModel = makeViewModel(mode: .edit(id))
+        viewModel.load()
+        #expect(viewModel.canPickLocationOnMap)
+
+        let pin = Coordinate(latitude: 51.75, longitude: 19.45)
+        #expect(viewModel.setManualLocation(pin))
+        #expect(store.manualLocations[id] == pin)
+    }
+
+    @Test("Wskazanie na mapie tylko dla zapisanego adresu przesyłki bez położenia")
+    func manualLocationAvailability() throws {
+        let located = try store.addParcel(address: polna)
+        store.statuses[located] = .succeeded
+        let viewModel = makeViewModel(mode: .edit(located))
+        viewModel.load()
+        #expect(!viewModel.canPickLocationOnMap, "Położenie już jest")
+
+        let missing = try store.addParcel(address: polna)
+        store.statuses[missing] = .notFound
+        let editing = makeViewModel(mode: .edit(missing))
+        editing.load()
+        editing.form.buildingNumber = "99"
+        #expect(!editing.canPickLocationOnMap, "Nowy adres najpierw trafia do geokodera")
+
+        #expect(!makeViewModel(mode: .manual).canPickLocationOnMap)
+    }
 }

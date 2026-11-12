@@ -1,4 +1,5 @@
 import MapKit
+import SwiftData
 import SwiftUI
 
 /// Ekran podglądu adresu: zdjęcie etykiety (tylko w pamięci) i formularz do
@@ -6,6 +7,9 @@ import SwiftUI
 struct AddressReviewView: View {
     @State private var viewModel: AddressReviewViewModel
     @State private var isPhotoEnlarged = false
+    @State private var isPickingLocation = false
+    /// Baza — punkt startowy mapy przy ręcznym wskazywaniu miejsca.
+    @Query private var bases: [Base]
     @FocusState private var isEditing: Bool
     @Environment(\.dismiss) private var dismiss
 
@@ -67,6 +71,16 @@ struct AddressReviewView: View {
                 await viewModel.recognize(image)
             }
         }
+        .sheet(isPresented: $isPickingLocation) {
+            NavigationStack {
+                LocationPickerView(
+                    address: viewModel.form.address,
+                    start: viewModel.knownLocation ?? bases.first?.coordinate
+                ) { coordinate in
+                    if viewModel.setManualLocation(coordinate) { finish(next: false) }
+                }
+            }
+        }
         .fullScreenCover(isPresented: $isPhotoEnlarged) {
             if let photo {
                 EnlargedPhotoView(photo: photo)
@@ -103,6 +117,16 @@ struct AddressReviewView: View {
 
         if viewModel.canChooseLocation {
             locationCandidatesSection
+        }
+
+        if viewModel.canPickLocationOnMap {
+            Section {
+                Button("Wskaż miejsce na mapie", systemImage: "mappin.and.ellipse") {
+                    isPickingLocation = true
+                }
+            } footer: {
+                Text("Gdy adres jest poprawny, a mapa go nie zna (np. nowe osiedle), zaznacz budynek ręcznie.")
+            }
         }
 
         Section {

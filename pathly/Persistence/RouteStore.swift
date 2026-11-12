@@ -15,6 +15,18 @@ protocol DeliveryStore {
     func routeCandidates() throws -> RouteCandidates
     /// Status doręczenia nie zmienia kolejności, więc nie unieważnia trasy.
     func setDeliveryStatus(_ status: DeliveryStatus, ofParcel id: UUID) throws
+    /// Koniec dnia: usuwa doręczone przesyłki i trasę, niedoręczone wracają do
+    /// doręczenia następnego dnia. Przesyłki jeszcze nieobsłużone zostają bez zmian.
+    @discardableResult
+    func finishDay() throws -> DaySummary
+}
+
+/// Wynik zakończenia dnia.
+nonisolated struct DaySummary: Hashable, Sendable {
+    /// Usunięte, bo doręczone.
+    var removed: Int
+    /// Niedoręczone — zostają na liście do ponownego doręczenia.
+    var carriedOver: Int
 }
 
 /// Implementacja `RouteStore` na SwiftData.

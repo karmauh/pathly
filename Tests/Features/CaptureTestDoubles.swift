@@ -19,6 +19,7 @@ final class InMemoryParcelStore: ParcelStore {
     var statuses: [UUID: GeocodingStatus] = [:]
     var candidates: [UUID: [GeocodingCandidate]] = [:]
     private(set) var chosenLocations: [UUID: GeocodingCandidate] = [:]
+    private(set) var manualLocations: [UUID: Coordinate] = [:]
     var shouldFail = false
 
     func addParcel(address: Address) throws -> UUID {
@@ -47,6 +48,11 @@ final class InMemoryParcelStore: ParcelStore {
     func chooseLocation(_ candidate: GeocodingCandidate, forParcel id: UUID) throws {
         if shouldFail { throw ParcelStoreError.parcelNotFound }
         chosenLocations[id] = candidate
+    }
+
+    func setManualLocation(_ coordinate: Coordinate, forParcel id: UUID) throws {
+        if shouldFail { throw ParcelStoreError.parcelNotFound }
+        manualLocations[id] = coordinate
     }
 }
 

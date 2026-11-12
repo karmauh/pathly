@@ -170,6 +170,24 @@ struct GeocodingQueueTests {
         #expect(sleeps.delays.isEmpty, "Brak wyniku to nie błąd — bez ponawiania")
     }
 
+    @Test("Nieznaleziony adres zatwierdzony ponownie bez zmian jest geokodowany od nowa")
+    func notFoundIsRetriedOnEnqueue() async throws {
+        let queue = makeQueue()
+        geocoder.responses = [.success(.notFound)]
+        let id = try store.addParcel(address: address(7))
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+        #expect(try parcel(id).geocodingStatus == .notFound)
+
+        // Kurier otwiera przesyłkę i zatwierdza ją bez zmian (np. po poprawce geokodera).
+        try store.updateAddress(ofParcel: id, to: address(7))
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests.count == 2)
+        #expect(try parcel(id).geocodingStatus == .succeeded)
+    }
+
     @Test("Znany adres nie jest geokodowany ponownie")
     func knownAddressSkipsRequest() async throws {
         let queue = makeQueue()

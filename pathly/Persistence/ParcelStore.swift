@@ -17,6 +17,8 @@ protocol ParcelStore {
     func geocodingCandidates(ofParcel id: UUID) throws -> [GeocodingCandidate]
     /// Kurier wskazał właściwe miejsce spośród kandydatów.
     func chooseLocation(_ candidate: GeocodingCandidate, forParcel id: UUID) throws
+    /// Kurier wskazał położenie ręcznie na mapie, bo geokoder nie znalazł adresu.
+    func setManualLocation(_ coordinate: Coordinate, forParcel id: UUID) throws
 }
 
 /// Operacje potrzebne kolejce geokodowania.
@@ -97,8 +99,18 @@ final class SwiftDataParcelStore: ParcelStore, GeocodingStore, DeliveryStore {
     }
 
     func chooseLocation(_ candidate: GeocodingCandidate, forParcel id: UUID) throws {
+        try setLocation(candidate.coordinate, forParcel: id)
+    }
+
+    /// Położenie wskazane na mapie obowiązuje dla bieżącego adresu — inna paczka
+    /// pod ten sam adres też je przejmie, a zmiana adresu wyśle przesyłkę do geokodowania.
+    func setManualLocation(_ coordinate: Coordinate, forParcel id: UUID) throws {
+        try setLocation(coordinate, forParcel: id)
+    }
+
+    private func setLocation(_ coordinate: Coordinate, forParcel id: UUID) throws {
         guard let parcel = try fetch(id) else { throw ParcelStoreError.parcelNotFound }
-        parcel.coordinate = candidate.coordinate
+        parcel.coordinate = coordinate
         parcel.geocodedAddress = parcel.address
         parcel.geocodingCandidates = []
         parcel.geocodingStatus = .succeeded
@@ -132,6 +144,25 @@ final class SwiftDataParcelStore: ParcelStore, GeocodingStore, DeliveryStore {
         guard let parcel = try fetch(id) else { throw ParcelStoreError.parcelNotFound }
         parcel.deliveryStatus = status
         try context.save()
+    }
+
+    func finishDay() throws -> DaySummary {
+        var summary = DaySummary(removed: 0, carriedOver: 0)
+        for parcel in try fetchAll() {
+            switch parcel.deliveryStatus {
+            case .delivered:
+                context.delete(parcel)
+                summary.removed += 1
+            case .notDelivered:
+                parcel.deliveryStatus = .pending
+                summary.carriedOver += 1
+            case .pending:
+                break
+            }
+        }
+        try context.delete(model: Route.self)
+        try context.save()
+        return summary
     }
 
     // MARK: GeocodingStore

@@ -43,7 +43,11 @@ final class AddressReviewViewModel {
     private(set) var locationCandidates: [GeocodingCandidate] = []
     /// Adres wczytany do edycji — kandydaci i problem z geokodowaniem dotyczą tylko jego.
     private var loadedAddress: Address?
+    private var loadedStatus: GeocodingStatus?
     private var geocodingNotice: String?
+    /// Znane położenie edytowanej przesyłki albo pierwszego kandydata — od niego
+    /// startuje mapa przy ręcznym wskazywaniu miejsca.
+    private(set) var knownLocation: Coordinate?
 
     private let recognizer: any TextRecognizer
     private let parser: AddressParser
@@ -87,6 +91,14 @@ final class AddressReviewViewModel {
         !locationCandidates.isEmpty && form.address == loadedAddress
     }
 
+    /// Czy pozwolić wskazać miejsce na mapie: tylko dla edytowanej przesyłki bez
+    /// położenia i dopóki adres w formularzu się nie zmienił (pinezka dotyczy
+    /// zapisanego adresu; nowy adres najpierw trafi do geokodera).
+    var canPickLocationOnMap: Bool {
+        guard case .edit = mode, form.address == loadedAddress else { return false }
+        return loadedStatus?.needsAttention == true
+    }
+
     /// Dlaczego nie udało się ustalić położenia edytowanej przesyłki. Znika,
     /// gdy kurier zmieni adres — nowy zostanie sprawdzony po zatwierdzeniu.
     var geocodingProblem: String? {
@@ -102,7 +114,9 @@ final class AddressReviewViewModel {
                 loadedAddress = form.address
             }
             locationCandidates = try store.geocodingCandidates(ofParcel: id)
-            geocodingNotice = Self.notice(for: try store.geocodingStatus(ofParcel: id))
+            loadedStatus = try store.geocodingStatus(ofParcel: id)
+            geocodingNotice = Self.notice(for: loadedStatus)
+            knownLocation = locationCandidates.first?.coordinate
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -176,9 +190,23 @@ final class AddressReviewViewModel {
         }
     }
 
+    /// Kurier wskazał położenie przesyłki na mapie.
+    @discardableResult
+    func setManualLocation(_ coordinate: Coordinate) -> Bool {
+        guard case .edit(let id) = mode else { return false }
+        do {
+            try store.setManualLocation(coordinate, forParcel: id)
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     private static func notice(for status: GeocodingStatus?) -> String? {
         switch status {
-        case .notFound: "Nie znaleziono tego adresu na mapie. Sprawdź ulicę, numer i miejscowość."
+        case .notFound: "Nie znaleziono tego adresu na mapie. Popraw ulicę, numer lub miejscowość, zatwierdź, aby spróbować ponownie, albo wskaż miejsce na mapie."
         case .failed: "Nie udało się ustalić położenia z powodu błędu połączenia. Zatwierdź, aby spróbować ponownie."
         case .ambiguous, .pending, .succeeded, nil: nil
         }
