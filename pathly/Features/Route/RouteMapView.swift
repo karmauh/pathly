@@ -51,6 +51,10 @@ struct RouteMapView: View {
             MapCompass()
             MapScaleView()
         }
+        // Nowa trasa (inne przystanki) — kamera dopasowuje się do niej od nowa.
+        .onChange(of: progress.entries.map(\.parcelID)) {
+            position = .automatic
+        }
         .safeAreaInset(edge: .bottom) {
             if let entry = shownEntry, let parcel = parcels[entry.parcelID] {
                 let isCurrent = entry.id == progress.current?.id

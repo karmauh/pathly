@@ -9,6 +9,7 @@ struct RouteView: View {
     @Query private var bases: [Base]
     @AppStorage(NavigationApp.storageKey) private var navigationApp: NavigationApp = .appleMaps
     @State private var mode: DisplayMode = .list
+    @State private var isConfirmingFinishDay = false
 
     private let launcher = NavigationLauncher()
 
@@ -33,9 +34,13 @@ struct RouteView: View {
         Group {
             if let route, !progress.entries.isEmpty {
                 VStack(spacing: 0) {
-                    RouteSummary(route: route, progress: progress, isComputing: viewModel.isComputing) {
-                        viewModel.startComputing()
-                    }
+                    RouteSummary(
+                        route: route,
+                        progress: progress,
+                        isComputing: viewModel.isComputing,
+                        onRecompute: viewModel.startComputing,
+                        onFinishDay: { isConfirmingFinishDay = true }
+                    )
                     Picker("Widok", selection: $mode) {
                         ForEach(DisplayMode.allCases) { mode in
                             Label(mode.title, systemImage: mode.systemImage).tag(mode)
@@ -66,16 +71,29 @@ struct RouteView: View {
                     }
                 }
             } else {
-                ContentUnavailableView {
-                    Label("Brak trasy", systemImage: "map")
-                } description: {
-                    Text("Dodaj przesyłki, a potem wylicz najszybszą kolejność doręczeń — od bazy do bazy.")
-                } actions: {
-                    Button("Wylicz trasę", systemImage: "arrow.triangle.turn.up.right.diamond") {
-                        viewModel.startComputing()
+                if bases.isEmpty {
+                    ContentUnavailableView {
+                        Label("Brak bazy", systemImage: "house")
+                    } description: {
+                        Text("Trasa zaczyna się i kończy w bazie. Ustaw jej adres, aby wyliczyć kolejność doręczeń.")
+                    } actions: {
+                        NavigationLink(value: AppDestination.baseSettings) {
+                            Label("Ustaw bazę", systemImage: "house")
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isComputing)
+                } else {
+                    ContentUnavailableView {
+                        Label("Brak trasy", systemImage: "map")
+                    } description: {
+                        Text("Dodaj przesyłki, a potem wylicz najszybszą kolejność doręczeń — od bazy do bazy.")
+                    } actions: {
+                        Button("Wylicz trasę", systemImage: "arrow.triangle.turn.up.right.diamond") {
+                            viewModel.startComputing()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(viewModel.isComputing)
+                    }
                 }
             }
         }
@@ -87,6 +105,12 @@ struct RouteView: View {
                     }
                     .disabled(viewModel.isComputing)
                 }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button("Zakończ dzień", systemImage: "flag.checkered") {
+                        isConfirmingFinishDay = true
+                    }
+                    .disabled(viewModel.isComputing)
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -95,6 +119,21 @@ struct RouteView: View {
             }
         }
         .animation(.default, value: viewModel.isComputing)
+        .confirmationDialog(
+            "Zakończyć dzień?",
+            isPresented: $isConfirmingFinishDay,
+            titleVisibility: .visible
+        ) {
+            Button("Zakończ dzień", role: .destructive) { viewModel.finishDay() }
+        } message: {
+            Text("Doręczone przesyłki i trasa zostaną usunięte. Niedoręczone wrócą na listę jako do doręczenia, a jeszcze nieobsłużone zostaną bez zmian.")
+        }
+        .alert(
+            "Dzień zakończony",
+            isPresented: Binding(get: { viewModel.daySummaryMessage != nil }, set: { if !$0 { viewModel.dismissDaySummary() } }),
+            actions: { Button("OK") {} },
+            message: { Text(viewModel.daySummaryMessage ?? "") }
+        )
         .alert(
             "Nie można wyliczyć trasy",
             isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.dismissError() } }),
@@ -159,19 +198,21 @@ private struct RouteSummary: View {
     let progress: RouteProgress
     let isComputing: Bool
     let onRecompute: () -> Void
+    let onFinishDay: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
-                Label(RouteFormatting.duration(route.totalDuration), systemImage: "clock")
-                Label(RouteFormatting.distance(route.totalDistance), systemImage: "car")
-                Spacer()
-                Text("\(progress.completedCount) z \(progress.entries.count)")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Zrealizowano \(progress.completedCount) z \(progress.entries.count) przystanków")
+            // Przy dużym tekście (Dynamic Type) wartości układają się jedna pod drugą.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) { summaryItems; Spacer(minLength: 0); completedText }
+                VStack(alignment: .leading, spacing: 4) { summaryItems; completedText }
             }
             .font(.subheadline)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "Czas jazdy \(RouteFormatting.duration(route.totalDuration)), dystans \(RouteFormatting.distance(route.totalDistance)), "
+                    + "zrealizowano \(progress.completedCount) z \(progress.entries.count) przystanków"
+            )
 
             ProgressView(value: Double(progress.completedCount), total: Double(max(progress.entries.count, 1)))
                 .accessibilityHidden(true)
@@ -200,11 +241,26 @@ private struct RouteSummary: View {
                     text: "Wszystkie przystanki obsłużone: doręczono \(progress.deliveredCount), niedoręczono \(progress.notDeliveredCount). Wracaj do bazy.",
                     systemImage: "checkmark.seal.fill",
                     color: .green
-                )
+                ) {
+                    Button("Zakończ dzień", action: onFinishDay)
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var summaryItems: some View {
+        Label(RouteFormatting.duration(route.totalDuration), systemImage: "clock")
+        Label(RouteFormatting.distance(route.totalDistance), systemImage: "car")
+    }
+
+    private var completedText: some View {
+        Text("\(progress.completedCount) z \(progress.entries.count)")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -226,6 +282,8 @@ private struct Banner<Accessory: View>: View {
         }
         .padding(10)
         .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+        // Tekst jest czytany razem, a przycisk zostaje osobnym, aktywnym elementem.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -265,6 +323,7 @@ private struct RouteComputingBar: View {
         }
         .padding()
         .background(.bar)
+        .accessibilityElement(children: .contain)
     }
 }
 

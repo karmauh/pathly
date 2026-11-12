@@ -118,6 +118,7 @@ struct StopActionCard: View {
     let isCurrent: Bool
     let navigation: StopNavigation
     let onSetStatus: (DeliveryStatus, UUID) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -144,27 +145,31 @@ struct StopActionCard: View {
             }
             .buttonStyle(.borderedProminent)
 
-            HStack {
-                if entry.status == .pending {
-                    Button { onSetStatus(.delivered, entry.parcelID) } label: {
-                        Label("Doręczona", systemImage: "checkmark").frame(maxWidth: .infinity)
-                    }
-                    .tint(.green)
-                    Button { onSetStatus(.notDelivered, entry.parcelID) } label: {
-                        Label("Niedoręczona", systemImage: "xmark").frame(maxWidth: .infinity)
-                    }
-                    .tint(.orange)
-                } else {
-                    Button { onSetStatus(.pending, entry.parcelID) } label: {
-                        Label("Cofnij oznaczenie", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity)
-                    }
-                }
-            }
-            .buttonStyle(.bordered)
+            // Przy dużym tekście (Dynamic Type) przyciski statusu układają się jeden pod drugim.
+            let statusLayout = dynamicTypeSize >= .xxxLarge ? AnyLayout(VStackLayout()) : AnyLayout(HStackLayout())
+            statusLayout { statusButtons }
+                .buttonStyle(.bordered)
             .lineLimit(1)
-            .minimumScaleFactor(0.8)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var statusButtons: some View {
+        if entry.status == .pending {
+            Button { onSetStatus(.delivered, entry.parcelID) } label: {
+                Label("Doręczona", systemImage: "checkmark").frame(maxWidth: .infinity)
+            }
+            .tint(.green)
+            Button { onSetStatus(.notDelivered, entry.parcelID) } label: {
+                Label("Niedoręczona", systemImage: "xmark").frame(maxWidth: .infinity)
+            }
+            .tint(.orange)
+        } else {
+            Button { onSetStatus(.pending, entry.parcelID) } label: {
+                Label("Cofnij oznaczenie", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity)
+            }
+        }
     }
 }
 

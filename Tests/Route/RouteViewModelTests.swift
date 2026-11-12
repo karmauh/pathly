@@ -93,6 +93,23 @@ struct RouteViewModelTests {
         #expect(Set(try #require(try savedRoute()).stopOrder) == Set(ids[2...]))
     }
 
+    @Test("Zakończenie dnia podsumowuje usunięte i przeniesione przesyłki")
+    func finishDay() async throws {
+        try saveBase()
+        let ids = try addLocatedParcels(3)
+        await viewModel.computeRoute()
+        viewModel.setStatus(.delivered, ofParcel: ids[0])
+        viewModel.setStatus(.delivered, ofParcel: ids[1])
+        viewModel.setStatus(.notDelivered, ofParcel: ids[2])
+
+        viewModel.finishDay()
+
+        #expect(viewModel.daySummaryMessage == "Usunięto doręczone przesyłki: 2. Niedoręczone (1) zostają na liście na kolejny dzień.")
+        #expect(try savedRoute() == nil)
+        viewModel.dismissDaySummary()
+        #expect(viewModel.daySummaryMessage == nil)
+    }
+
     @Test("Błąd zapisu statusu — komunikat")
     func statusError() {
         viewModel.setStatus(.delivered, ofParcel: UUID())

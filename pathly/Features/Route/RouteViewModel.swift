@@ -72,6 +72,26 @@ final class RouteViewModel {
         }
     }
 
+    /// Komunikat po zakończeniu dnia, np. „Usunięto 98 doręczonych przesyłek.”
+    private(set) var daySummaryMessage: String?
+
+    func finishDay() {
+        do {
+            let summary = try deliveries.finishDay()
+            var parts = ["Usunięto doręczone przesyłki: \(summary.removed)."]
+            if summary.carriedOver > 0 {
+                parts.append("Niedoręczone (\(summary.carriedOver)) zostają na liście na kolejny dzień.")
+            }
+            daySummaryMessage = parts.joined(separator: " ")
+        } catch {
+            errorMessage = "Nie udało się zakończyć dnia. Spróbuj ponownie."
+        }
+    }
+
+    func dismissDaySummary() {
+        daySummaryMessage = nil
+    }
+
     func dismissError() {
         errorMessage = nil
     }
