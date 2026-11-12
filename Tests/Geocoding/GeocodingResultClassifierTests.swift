@@ -33,6 +33,23 @@ struct GeocodingResultClassifierTests {
         #expect(GeocodingResultClassifier.classify(candidates, for: warsawAddress) == .ambiguous(candidates))
     }
 
+    @Test("Miasto z łącznikiem pasuje do nazwy ze spacją mimo innego kodu (realny przypadek z MapKit)")
+    func hyphenatedCityMatchesDespiteSpecificPostalCode() {
+        // Etykieta: „43-300 Bielsko Biała” (ogólny kod miasta, łącznik zgubiony),
+        // MapKit: „Szczęśliwa, 43-318 Bielsko-Biała, Polska”.
+        let found = candidate(49.82, 19.04, city: "Bielsko-Biała", postalCode: "43-318", label: "Szczęśliwa, 43-318 Bielsko-Biała, Polska")
+        let address = Address(street: "Szczęśliwa", buildingNumber: "137", postalCode: "43-300", city: "Bielsko Biała")
+        #expect(GeocodingResultClassifier.classify([found], for: address) == .found(found))
+    }
+
+    @Test("Porównanie nazw ignoruje wielkość liter, znaki diakrytyczne, łączniki i nadmiarowe spacje")
+    func comparableNames() {
+        #expect(GeocodingResultClassifier.comparable("Bielsko-Biała") == GeocodingResultClassifier.comparable(" bielsko  biala "))
+        #expect(GeocodingResultClassifier.comparable("Kędzierzyn–Koźle") == "kedzierzyn kozle")
+        #expect(GeocodingResultClassifier.comparable("Łódź") == GeocodingResultClassifier.comparable("Lodz"))
+        #expect(GeocodingResultClassifier.comparable("Kraków") != GeocodingResultClassifier.comparable("Krakówek"))
+    }
+
     @Test("Przybliżony wynik z innej miejscowości jest odrzucany (realny przypadek z MapKit)")
     func rejectsFuzzyMatchFromAnotherTown() {
         let fuzzy = candidate(51.7838, 18.062, city: "Blizanów", postalCode: "62-800", label: "Warszówka 1, 62-800 Blizanów, Polska")

@@ -105,9 +105,17 @@ nonisolated enum GeocodingResultClassifier {
         return false
     }
 
-    /// Tekst do porównań: bez wielkości liter i znaków diakrytycznych.
-    private static func comparable(_ text: String) -> String {
+    /// Tekst do porównań: bez wielkości liter i znaków diakrytycznych, z łącznikami
+    /// i myślnikami zamienionymi na spacje — „Bielsko Biała” z etykiety (OCR często
+    /// gubi łącznik) to to samo co „Bielsko-Biała” z geokodera.
+    ///
+    /// „ł” zamieniamy ręcznie: w Unicode to osobna litera, a nie „l” ze znakiem
+    /// diakrytycznym, więc `diacriticInsensitive` jej nie zmienia („Lodz” ≠ „Łódź”).
+    static func comparable(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "pl_PL"))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacing("ł", with: "l")
+            .replacing(/[-‐‑‒–—]/, with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 }
