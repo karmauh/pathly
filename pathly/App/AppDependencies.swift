@@ -42,9 +42,10 @@ struct AppDependencies {
 extension AppDependencies {
     /// Zależności produkcyjne: dane na dysku, geokodowanie MapKit, OCR Vision,
     /// czasy przejazdu z OpenRouteService (albo przybliżenie bez klucza).
-    static func live() throws -> AppDependencies {
+    /// - Parameter inMemory: `true` dla danych pokazowych (`DemoData`) — nic nie trafia na dysk.
+    static func live(inMemory: Bool = false) throws -> AppDependencies {
         try make(
-            container: PersistenceController.makeContainer(),
+            container: PersistenceController.makeContainer(inMemory: inMemory),
             geocoder: MapKitGeocoder(),
             textRecognizer: VisionTextRecognizer(),
             travelCostProvider: FallbackCostProvider.live(configuration: .main)

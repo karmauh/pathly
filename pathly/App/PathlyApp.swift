@@ -7,6 +7,13 @@ struct PathlyApp: App {
 
     init() {
         do {
+            #if DEBUG
+            if DemoData.isRequested {
+                dependencies = try .live(inMemory: true)
+                try DemoData.seed(dependencies)
+                return
+            }
+            #endif
             dependencies = try .live()
         } catch {
             // Bez bazy danych aplikacja nie ma sensu działać dalej.
