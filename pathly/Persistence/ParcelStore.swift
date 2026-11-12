@@ -41,12 +41,15 @@ enum ParcelStoreError: LocalizedError {
     }
 }
 
-/// Implementacja `ParcelStore` i `GeocodingStore` na SwiftData.
+/// Implementacja `ParcelStore`, `GeocodingStore` i `DeliveryStore` na SwiftData.
+///
+/// Każda zmiana zbioru przesyłek albo ich położenia oznacza bieżącą trasę jako
+/// nieaktualną — w tym samym zapisie, więc nie da się o tym zapomnieć.
 ///
 /// Wyszukiwanie po statusie i adresie odbywa się w pamięci, nie w `#Predicate`:
 /// predykaty SwiftData słabo radzą sobie z enumami i strukturami `Codable`,
 /// a przesyłek na jednej trasie jest najwyżej kilkaset.
-final class SwiftDataParcelStore: ParcelStore, GeocodingStore {
+final class SwiftDataParcelStore: ParcelStore, GeocodingStore, DeliveryStore {
     private let context: ModelContext
 
     init(context: ModelContext) {
@@ -56,6 +59,7 @@ final class SwiftDataParcelStore: ParcelStore, GeocodingStore {
     func addParcel(address: Address) throws -> UUID {
         let parcel = Parcel(address: address)
         context.insert(parcel)
+        try context.invalidateRoute()
         try context.save()
         return parcel.id
     }
@@ -73,11 +77,13 @@ final class SwiftDataParcelStore: ParcelStore, GeocodingStore {
         parcel.geocodingCandidates = []
         let hasCoordinate = parcel.geocodedAddress == address && parcel.coordinate != nil
         parcel.geocodingStatus = hasCoordinate ? .succeeded : .pending
+        try context.invalidateRoute()
         try context.save()
     }
 
     func deleteParcels(_ ids: Set<UUID>) throws {
         try context.delete(model: Parcel.self, where: #Predicate { ids.contains($0.id) })
+        try context.invalidateRoute()
         try context.save()
     }
 
@@ -96,6 +102,35 @@ final class SwiftDataParcelStore: ParcelStore, GeocodingStore {
         parcel.geocodedAddress = parcel.address
         parcel.geocodingCandidates = []
         parcel.geocodingStatus = .succeeded
+        try context.invalidateRoute()
+        try context.save()
+    }
+
+    // MARK: DeliveryStore
+
+    func routeCandidates() throws -> RouteCandidates {
+        let waiting = try fetchAll().filter { $0.deliveryStatus == .pending }
+        var candidates = RouteCandidates(stops: [])
+        for parcel in waiting {
+            switch parcel.geocodingStatus {
+            case .succeeded:
+                if let coordinate = parcel.coordinate {
+                    candidates.stops.append(RouteStop(parcelID: parcel.id, coordinate: coordinate))
+                } else {
+                    candidates.needingAttention += 1
+                }
+            case .pending:
+                candidates.awaitingGeocoding += 1
+            case .notFound, .ambiguous, .failed:
+                candidates.needingAttention += 1
+            }
+        }
+        return candidates
+    }
+
+    func setDeliveryStatus(_ status: DeliveryStatus, ofParcel id: UUID) throws {
+        guard let parcel = try fetch(id) else { throw ParcelStoreError.parcelNotFound }
+        parcel.deliveryStatus = status
         try context.save()
     }
 
@@ -115,6 +150,9 @@ final class SwiftDataParcelStore: ParcelStore, GeocodingStore {
         parcel.geocodingCandidates = []
         switch outcome {
         case .located(let coordinate):
+            if parcel.coordinate != coordinate || parcel.geocodingStatus != .succeeded {
+                try context.invalidateRoute()
+            }
             parcel.coordinate = coordinate
             parcel.geocodedAddress = address
             parcel.geocodingStatus = .succeeded
