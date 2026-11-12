@@ -31,7 +31,7 @@ struct SettingsView: View {
             } header: {
                 Text("Nawigacja")
             } footer: {
-                Text("Przycisk nawigacji przy przystanku otwiera trasę w wybranej aplikacji. Bez zainstalowanych Map Google trasa otworzy się w przeglądarce.")
+                Text("Mapy Google prowadzą przez kilka kolejnych przystanków naraz (do 9), a na końcu trasy z powrotem do bazy. Mapy Apple nie przyjmują wielu przystanków w linku — prowadzą do jednego. Bez zainstalowanych Map Google trasa otworzy się w przeglądarce.")
             }
         }
         .navigationTitle("Ustawienia")

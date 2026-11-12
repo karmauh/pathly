@@ -17,24 +17,35 @@ nonisolated enum NavigationApp: String, CaseIterable, Identifiable, Sendable {
         case .googleMaps: "Mapy Google"
         }
     }
+
+    /// Czy aplikacja przyjmuje w linku kilka przystanków naraz.
+    var supportsMultipleStops: Bool {
+        self == .googleMaps
+    }
 }
 
-/// Adresy URL otwierające trasę samochodem do wskazanego punktu.
+/// Adresy URL otwierające trasę samochodem. Start to zawsze bieżące położenie
+/// kuriera — ustala je aplikacja nawigacyjna.
+///
+/// Oba adresy to zwykłe linki `https`: iOS otwiera je w aplikacji Mapy Apple
+/// albo Mapy Google (jeśli jest zainstalowana), a w przeciwnym razie w przeglądarce.
 nonisolated enum NavigationURLBuilder {
-    /// Adres aplikacji. Mapy Apple obsługują link `maps.apple.com` zawsze;
-    /// Mapy Google — schemat `comgooglemaps://`, o ile są zainstalowane.
-    static func appURL(for app: NavigationApp, destination: Coordinate) -> URL {
+    /// Trasa do jednego punktu.
+    static func url(for app: NavigationApp, destination: Coordinate) -> URL {
         switch app {
         case .appleMaps:
-            url("https://maps.apple.com/", ["daddr": coordinateText(destination), "dirflg": "d"])
+            url("https://maps.apple.com/", [("daddr", coordinateText(destination)), ("dirflg", "d")])
         case .googleMaps:
-            url("comgooglemaps://", ["daddr": coordinateText(destination), "directionsmode": "driving"])
+            googleURL(destination: destination, waypoints: [])
         }
     }
 
-    /// Mapy Google w przeglądarce — gdy aplikacji nie ma na telefonie.
-    static func googleWebURL(destination: Coordinate) -> URL {
-        url("https://www.google.com/maps/dir/", ["api": "1", "destination": coordinateText(destination), "travelmode": "driving"])
+    /// Trasa w Mapach Google przez kolejne przystanki partii, na końcu
+    /// ewentualnie z powrotem do bazy.
+    static func googleRouteURL(for batch: NavigationBatch) -> URL {
+        precondition(!batch.stops.isEmpty, "Partia musi zawierać przystanek")
+        let points = batch.stops + (batch.base.map { [$0] } ?? [])
+        return googleURL(destination: points[points.count - 1], waypoints: Array(points.dropLast()))
     }
 
     /// Współrzędne zawsze z kropką dziesiętną, niezależnie od ustawień regionalnych.
@@ -45,28 +56,39 @@ nonisolated enum NavigationURLBuilder {
         return "\(coordinate.latitude.formatted(style)),\(coordinate.longitude.formatted(style))"
     }
 
-    private static func url(_ base: String, _ query: KeyValuePairs<String, String>) -> URL {
+    private static func googleURL(destination: Coordinate, waypoints: [Coordinate]) -> URL {
+        var query = [("api", "1"), ("destination", coordinateText(destination))]
+        if !waypoints.isEmpty {
+            query.append(("waypoints", waypoints.map(coordinateText).joined(separator: "|")))
+        }
+        query.append(("travelmode", "driving"))
+        return url("https://www.google.com/maps/dir/", query)
+    }
+
+    private static func url(_ base: String, _ query: [(String, String)]) -> URL {
         var components = URLComponents(string: base)!
-        components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        components.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         return components.url!
     }
 }
 
-/// Otwiera nawigację do przystanku w wybranej aplikacji.
+/// Otwiera nawigację w wybranej aplikacji.
 struct NavigationLauncher {
-    var canOpen: (URL) -> Bool = { UIApplication.shared.canOpenURL($0) }
     var open: (URL) -> Void = { UIApplication.shared.open($0) }
 
-    /// Adres, który zostanie otwarty — z rezerwą na Mapy Google w przeglądarce.
-    func url(for app: NavigationApp, destination: Coordinate) -> URL {
-        let appURL = NavigationURLBuilder.appURL(for: app, destination: destination)
-        if app == .googleMaps, !canOpen(appURL) {
-            return NavigationURLBuilder.googleWebURL(destination: destination)
-        }
-        return appURL
+    /// Nawigacja do jednego przystanku.
+    func navigate(to destination: Coordinate, using app: NavigationApp) {
+        open(NavigationURLBuilder.url(for: app, destination: destination))
     }
 
-    func navigate(to destination: Coordinate, using app: NavigationApp) {
-        open(url(for: app, destination: destination))
+    /// Nawigacja przez partię przystanków. Mapy Apple nie mają linku z wieloma
+    /// przystankami, więc dostają tylko pierwszy z nich.
+    func navigate(through batch: NavigationBatch, using app: NavigationApp) {
+        guard let first = batch.stops.first else { return }
+        if app.supportsMultipleStops {
+            open(NavigationURLBuilder.googleRouteURL(for: batch))
+        } else {
+            navigate(to: first, using: app)
+        }
     }
 }

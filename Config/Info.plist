@@ -4,10 +4,6 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Aparat służy do fotografowania listów przewozowych, z których aplikacja odczytuje adres doręczenia.</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>comgooglemaps</string>
-	</array>
 	<key>ORSAPIKey</key>
 	<string>$(ORS_API_KEY)</string>
 </dict>
