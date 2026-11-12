@@ -6,12 +6,26 @@ struct RouteStopList: View {
     let parcels: [UUID: Parcel]
     let onSetStatus: (DeliveryStatus, UUID) -> Void
     let onNavigate: (Parcel) -> Void
+    /// Nawigacja z bieżącego przystanku przez kolejne — gdy aplikacja ją obsługuje.
+    let routeNavigation: StopNavigation?
 
     var body: some View {
         List {
             if let current = progress.current, let parcel = parcels[current.parcelID] {
-                Section("Następny przystanek") {
-                    StopActionCard(entry: current, parcel: parcel, isCurrent: true, onSetStatus: onSetStatus, onNavigate: onNavigate)
+                Section {
+                    StopActionCard(
+                        entry: current,
+                        parcel: parcel,
+                        isCurrent: true,
+                        navigation: routeNavigation ?? .single { onNavigate(parcel) },
+                        onSetStatus: onSetStatus
+                    )
+                } header: {
+                    Text("Następny przystanek")
+                } footer: {
+                    if let hint = routeNavigation?.hint {
+                        Text(hint)
+                    }
                 }
             }
 
@@ -85,13 +99,25 @@ private struct RouteStopRow: View {
     }
 }
 
+/// Akcja przycisku nawigacji na karcie przystanku.
+struct StopNavigation {
+    let title: String
+    /// Wyjaśnienie pod kartą, np. ile przystanków trafi do nawigacji.
+    var hint: String?
+    let action: () -> Void
+
+    static func single(_ action: @escaping () -> Void) -> StopNavigation {
+        StopNavigation(title: "Nawiguj", action: action)
+    }
+}
+
 /// Karta przystanku z akcjami: nawigacja i oznaczenie doręczenia.
 struct StopActionCard: View {
     let entry: RouteProgress.Entry
     let parcel: Parcel
     let isCurrent: Bool
+    let navigation: StopNavigation
     let onSetStatus: (DeliveryStatus, UUID) -> Void
-    let onNavigate: (Parcel) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -112,21 +138,31 @@ struct StopActionCard: View {
             }
             .accessibilityElement(children: .combine)
 
+            Button(action: navigation.action) {
+                Label(navigation.title, systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
             HStack {
-                Button("Nawiguj", systemImage: "arrow.triangle.turn.up.right.diamond.fill") { onNavigate(parcel) }
-                    .buttonStyle(.borderedProminent)
-                Spacer()
                 if entry.status == .pending {
-                    Button("Doręczona", systemImage: "checkmark") { onSetStatus(.delivered, entry.parcelID) }
-                        .tint(.green)
-                    Button("Niedoręczona", systemImage: "xmark") { onSetStatus(.notDelivered, entry.parcelID) }
-                        .tint(.orange)
-                        .labelStyle(.iconOnly)
+                    Button { onSetStatus(.delivered, entry.parcelID) } label: {
+                        Label("Doręczona", systemImage: "checkmark").frame(maxWidth: .infinity)
+                    }
+                    .tint(.green)
+                    Button { onSetStatus(.notDelivered, entry.parcelID) } label: {
+                        Label("Niedoręczona", systemImage: "xmark").frame(maxWidth: .infinity)
+                    }
+                    .tint(.orange)
                 } else {
-                    Button("Cofnij", systemImage: "arrow.uturn.backward") { onSetStatus(.pending, entry.parcelID) }
+                    Button { onSetStatus(.pending, entry.parcelID) } label: {
+                        Label("Cofnij oznaczenie", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity)
+                    }
                 }
             }
             .buttonStyle(.bordered)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
         }
         .padding(.vertical, 4)
     }

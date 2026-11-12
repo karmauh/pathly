@@ -12,6 +12,8 @@ struct RouteMapView: View {
     let base: Coordinate?
     let onSetStatus: (DeliveryStatus, UUID) -> Void
     let onNavigate: (Parcel) -> Void
+    /// Nawigacja z bieżącego przystanku przez kolejne — gdy aplikacja ją obsługuje.
+    let routeNavigation: StopNavigation?
 
     @State private var selection: UUID?
     @State private var position: MapCameraPosition = .automatic
@@ -51,16 +53,17 @@ struct RouteMapView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if let entry = shownEntry, let parcel = parcels[entry.parcelID] {
+                let isCurrent = entry.id == progress.current?.id
                 StopActionCard(
                     entry: entry,
                     parcel: parcel,
-                    isCurrent: entry.id == progress.current?.id,
+                    isCurrent: isCurrent,
+                    navigation: (isCurrent ? routeNavigation : nil) ?? .single { onNavigate(parcel) },
                     onSetStatus: { status, id in
                         onSetStatus(status, id)
                         // Po oznaczeniu karta przechodzi do następnego przystanku.
                         selection = nil
-                    },
-                    onNavigate: onNavigate
+                    }
                 )
                 .padding()
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))

@@ -28,6 +28,7 @@ struct RouteView: View {
             stopOrder: route?.stopOrder ?? [],
             statuses: parcelsByID.mapValues(\.deliveryStatus)
         )
+        let routeNavigation = routeNavigation(progress: progress, parcels: parcelsByID)
 
         Group {
             if let route, !progress.entries.isEmpty {
@@ -46,14 +47,21 @@ struct RouteView: View {
 
                     switch mode {
                     case .list:
-                        RouteStopList(progress: progress, parcels: parcelsByID, onSetStatus: setStatus, onNavigate: navigate)
+                        RouteStopList(
+                            progress: progress,
+                            parcels: parcelsByID,
+                            onSetStatus: setStatus,
+                            onNavigate: navigate,
+                            routeNavigation: routeNavigation
+                        )
                     case .map:
                         RouteMapView(
                             progress: progress,
                             parcels: parcelsByID,
                             base: bases.first?.coordinate,
                             onSetStatus: setStatus,
-                            onNavigate: navigate
+                            onNavigate: navigate,
+                            routeNavigation: routeNavigation
                         )
                     }
                 }
@@ -102,6 +110,25 @@ struct RouteView: View {
     private func navigate(to parcel: Parcel) {
         guard let coordinate = parcel.coordinate else { return }
         launcher.navigate(to: coordinate, using: navigationApp)
+    }
+
+    /// Nawigacja przez kolejne przystanki naraz — tylko w Mapach Google.
+    /// W Mapach Apple karta nawiguje do jednego przystanku.
+    private func routeNavigation(progress: RouteProgress, parcels: [UUID: Parcel]) -> StopNavigation? {
+        guard navigationApp.supportsMultipleStops,
+              let batch = NavigationBatch.next(
+                  in: progress,
+                  coordinates: parcels.compactMapValues(\.coordinate),
+                  base: bases.first?.coordinate
+              ),
+              batch.stops.count > 1 || batch.returnsToBase
+        else { return nil }
+
+        return StopNavigation(
+            title: batch.returnsToBase ? "Nawiguj do końca" : "Nawiguj (\(batch.stops.count))",
+            hint: NavigationBatch.description(of: batch),
+            action: { [launcher, navigationApp] in launcher.navigate(through: batch, using: navigationApp) }
+        )
     }
 }
 
