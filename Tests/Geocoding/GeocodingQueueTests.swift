@@ -53,9 +53,20 @@ struct GeocodingQueueTests {
         var delays: [Duration] = []
     }
 
-    private func makeQueue(policy: GeocodingQueue.RetryPolicy = .init()) -> GeocodingQueue {
+    /// - Parameters:
+    ///   - store: magazyn kolejki; domyślnie prawdziwy `SwiftDataParcelStore`.
+    ///   - onSleep: wywoływane przy każdym czekaniu (po zapisaniu opóźnienia) —
+    ///     może zmienić dane albo rzucić, jak anulowany `Task.sleep`.
+    private func makeQueue(
+        policy: GeocodingQueue.RetryPolicy = .init(),
+        store: (any GeocodingStore)? = nil,
+        onSleep: (() throws -> Void)? = nil
+    ) -> GeocodingQueue {
         let sleeps = sleeps
-        return GeocodingQueue(geocoder: geocoder, store: store, policy: policy) { sleeps.delays.append($0) }
+        return GeocodingQueue(geocoder: geocoder, store: store ?? self.store, policy: policy) {
+            sleeps.delays.append($0)
+            try onSleep?()
+        }
     }
 
     private func address(_ number: Int) -> Address {
@@ -268,5 +279,191 @@ struct GeocodingQueueTests {
         await queue.waitUntilIdle()
         #expect(geocoder.requests.count == 2)
         #expect(!queue.isScheduled(second))
+    }
+
+    // MARK: Anulowanie, błędy magazynu, wyczerpany limit
+
+    @Test("Anulowane czekanie niczego nie zapisuje — przesyłka zostaje oczekująca")
+    func cancelledWaitKeepsPending() async throws {
+        let queue = makeQueue(onSleep: { throw CancellationError() })
+        geocoder.responses = [.failure(.rateLimited)]
+        let id = try store.addParcel(address: address(1))
+
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests.count == 1)
+        #expect(try parcel(id).geocodingStatus == .pending)
+        #expect(!queue.isWaitingForRateLimit)
+        #expect(!queue.isRunning)
+    }
+
+    @Test("Błąd odczytu adresu pomija przesyłkę, a kolejka idzie dalej")
+    func addressReadFailure() async throws {
+        let first = try store.addParcel(address: address(1))
+        let second = try store.addParcel(address: address(2))
+        let failing = FailingGeocodingStore(base: store)
+        failing.failingAddressReads = [first]
+        let queue = makeQueue(store: failing)
+
+        queue.enqueue(first)
+        queue.enqueue(second)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests == [address(2)])
+        #expect(try parcel(first).geocodingStatus == .pending)
+        #expect(try parcel(second).geocodingStatus == .succeeded)
+    }
+
+    @Test("Błąd zapisu wyniku nie zatrzymuje kolejki")
+    func recordFailure() async throws {
+        let first = try store.addParcel(address: address(1))
+        let second = try store.addParcel(address: address(2))
+        let failing = FailingGeocodingStore(base: store)
+        failing.failingRecords = [first]
+        let queue = makeQueue(store: failing)
+
+        queue.enqueue(first)
+        queue.enqueue(second)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests.count == 2)
+        #expect(try parcel(first).geocodingStatus == .pending, "Podejmie ją resumePending")
+        #expect(try parcel(second).geocodingStatus == .succeeded)
+        #expect(!queue.isRunning)
+        #expect(queue.total == 0)
+    }
+
+    @Test("Błąd sprawdzania znanych współrzędnych kończy się zwykłym zapytaniem")
+    func knownCoordinateFailure() async throws {
+        let id = try store.addParcel(address: address(1))
+        let failing = FailingGeocodingStore(base: store)
+        failing.failKnownCoordinate = true
+        let queue = makeQueue(store: failing)
+
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests == [address(1)])
+        #expect(try parcel(id).geocodingStatus == .succeeded)
+    }
+
+    @Test("Wyczerpany limit oznacza resztę serii jako błąd bez zapytań; ponowienie obejmuje wszystkie")
+    func rateLimitExhaustionStopsSeries() async throws {
+        var policy = GeocodingQueue.RetryPolicy()
+        policy.rateLimitRetries = 1
+        let queue = makeQueue(policy: policy)
+
+        // Adres o znanych współrzędnych nie potrzebuje zapytania, więc dostanie je mimo limitu.
+        let located = try store.addParcel(address: address(9))
+        queue.enqueue(located)
+        await queue.waitUntilIdle()
+        #expect(geocoder.requests.count == 1)
+
+        geocoder.responses = [.failure(.rateLimited), .failure(.rateLimited)]
+        let first = try store.addParcel(address: address(1))
+        let second = try store.addParcel(address: address(2))
+        let sameAsLocated = try store.addParcel(address: address(9))
+        let third = try store.addParcel(address: address(3))
+        [first, second, sameAsLocated, third].forEach(queue.enqueue)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests.count == 3, "Tylko pierwsza przesyłka i jej jedno ponowienie")
+        #expect(sleeps.delays == [.seconds(2)])
+        #expect(try parcel(first).geocodingStatus == .failed)
+        #expect(try parcel(second).geocodingStatus == .failed)
+        #expect(try parcel(third).geocodingStatus == .failed)
+        #expect(try parcel(sameAsLocated).geocodingStatus == .succeeded)
+
+        queue.retryFailed()
+        await queue.waitUntilIdle()
+        #expect(geocoder.requests.count == 6)
+        #expect(try parcel(first).geocodingStatus == .succeeded)
+        #expect(try parcel(second).geocodingStatus == .succeeded)
+        #expect(try parcel(third).geocodingStatus == .succeeded)
+    }
+
+    @Test("Zmiana adresu podczas czekania przerywa ponawianie starego adresu")
+    func addressChangedDuringBackoff() async throws {
+        let id = try store.addParcel(address: address(1))
+        let store = store
+        let newAddress = address(2)
+        let queue = makeQueue(onSleep: { try store.updateAddress(ofParcel: id, to: newAddress) })
+        geocoder.responses = [.failure(.rateLimited)]
+
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests == [address(1)])
+        let saved = try parcel(id)
+        #expect(saved.address == address(2))
+        #expect(saved.geocodingStatus == .pending, "Nowy adres zgłasza do kolejki ekran edycji")
+    }
+
+    @Test("Usunięcie przesyłki podczas czekania przerywa ponawianie")
+    func parcelDeletedDuringBackoff() async throws {
+        let id = try store.addParcel(address: address(1))
+        let store = store
+        let queue = makeQueue(onSleep: { try store.deleteParcels([id]) })
+        geocoder.responses = [.failure(.failed("offline"))]
+
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+
+        #expect(geocoder.requests.count == 1)
+        #expect(!queue.isRunning)
+    }
+
+    @Test("Limit i inne błędy mają osobne opóźnienia; baner limitu tylko przy limicie")
+    func mixedErrorsBackoff() async throws {
+        let queue = makeQueue()
+        geocoder.responses = [.failure(.rateLimited), .failure(.failed("offline")), .failure(.rateLimited)]
+        var waitingFlags: [Bool] = []
+        geocoder.onGeocode = { _ in waitingFlags.append(queue.isWaitingForRateLimit) }
+        let id = try store.addParcel(address: address(1))
+
+        queue.enqueue(id)
+        await queue.waitUntilIdle()
+
+        #expect(sleeps.delays == [.seconds(2), .seconds(2), .seconds(4)])
+        #expect(waitingFlags == [false, true, false, true])
+        #expect(!queue.isWaitingForRateLimit)
+        #expect(try parcel(id).geocodingStatus == .succeeded)
+    }
+}
+
+/// Magazyn, który na żądanie rzuca błędem z wybranych metod, a poza tym
+/// przekazuje wywołania do prawdziwego `SwiftDataParcelStore`.
+@MainActor
+final class FailingGeocodingStore: GeocodingStore {
+    struct Failure: Error {}
+
+    let base: SwiftDataParcelStore
+    var failingAddressReads: Set<UUID> = []
+    var failingRecords: Set<UUID> = []
+    var failKnownCoordinate = false
+
+    init(base: SwiftDataParcelStore) {
+        self.base = base
+    }
+
+    func parcelIDs(withStatus status: GeocodingStatus) throws -> [UUID] {
+        try base.parcelIDs(withStatus: status)
+    }
+
+    func address(ofParcel id: UUID) throws -> Address? {
+        if failingAddressReads.contains(id) { throw Failure() }
+        return try base.address(ofParcel: id)
+    }
+
+    func knownCoordinate(for address: Address) throws -> Coordinate? {
+        if failKnownCoordinate { throw Failure() }
+        return try base.knownCoordinate(for: address)
+    }
+
+    @discardableResult
+    func recordGeocoding(_ outcome: GeocodingOutcome, ofParcel id: UUID, for address: Address) throws -> Bool {
+        if failingRecords.contains(id) { throw Failure() }
+        return try base.recordGeocoding(outcome, ofParcel: id, for: address)
     }
 }
